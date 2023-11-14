@@ -1,0 +1,27 @@
+body {
+ -webkit-font-smoothing: antialiased;
+ font-family: sans-serif;
+}
+img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+.center {
+ text-align: center;
+}
+.table {
+ padding: 0 20px;
+ max-width: 500px;
+ margin: auto;
+}
+.header {
+ background-color: #F5F5F5;
+}
+.cell {
+ border: 1px solid #E8E8E8;
+}
+.bold {
+ font-weight: 700;
+}
+
