@@ -99,11 +99,11 @@ class Time {
       writer.write(amPm);
     }
 
-    bool operator < (const Time& rhs) {
+    bool isBefore(const Time& rhs) {
       return _t < rhs._t;
     }
 
-    bool operator > (const Time& rhs) {
+    bool isAfter(const Time& rhs) {
       return _t > rhs._t;
     }
 
@@ -137,15 +137,15 @@ class TimeRange {
     }
 
     bool isInThePast(Time& now) {
-      return _end < now;
+      return _end.isBefore(now);
     }
 
     bool isInTheFuture(Time& now) {
-      return _start > now;
+      return _start.isAfter(now);
     }
 
     bool isCurrentlyHappening(Time& now) {
-      return _start < now && _end > now;
+      return _start.isBefore(now) && _end.isAfter(now);
     }
 
   private:
@@ -279,7 +279,7 @@ void maybeHandleHttpRequest() {
     BufferedResponseWriter writer(&client, response_buff, sizeof(response_buff));
     boolean responseSent = false;
     int index = 0;
-    int deadline = millis() + 5000;
+    int deadline = millis() + 2000;
     while (client.connected() && millis() < deadline && !responseSent) {
       int available = client.available();
       if (available > 0) {
@@ -434,6 +434,7 @@ int sort_time_ranges(const void *cmp1, const void *cmp2)
   Time* a = ((TimeRange *) cmp1)->getStart();
   Time* b = ((TimeRange *) cmp2)->getStart();
   return a > b ? 1 : (a < b ? -1 : 0);
+  return a->getTime() > b->getTime() ? 1 : (a->getTime() < b->getTime() ? -1 : 0);
 }
 
 void parseMeetings(StringView meetingsList) {
@@ -446,10 +447,14 @@ void parseMeetings(StringView meetingsList) {
       Time start = Time(meeting.substring(0, dashIndex).toLong());
       Time end = Time(meeting.substring(dashIndex + 1).toLong());
       Time now = Time::now();
-      if (start > end) {
+      if (start.getTime() == 0 || end.getTime() == 0) {
+        Serial.write("Unable to parse ");
+        meeting.writeToSerial();
+        Serial.println(" into numbers");
+      } else if (start.isAfter(end)) {
         Serial.write("Error parsing ");
         meeting.writeToSerial();
-        Serial.println("start > end");
+        Serial.println(" start > end");
       } else if (start.getDate() < now.getDate() - 1) {
         Serial.write("Error parsing ");
         meeting.writeToSerial();
