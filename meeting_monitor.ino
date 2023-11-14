@@ -126,7 +126,6 @@ class TimeRange {
   public:
     TimeRange() : _start(Time()), _end(Time()) {}
     TimeRange(Time start, Time end) : _start(start), _end(end) {}
-    //TimeRange& operator=(const TimeRange& tr) = default;
     bool isEmpty() { return _start.getTime() == 0; }
     Time* getStart() { return &_start; }
     Time* getEnd() { return &_end; }
@@ -306,7 +305,6 @@ void maybeHandleHttpRequest() {
             sendResponseHeaders(writer, 400, "", "");
           }
         }
-        //index++;
       }
     }
     if (millis() >= deadline) {
@@ -360,9 +358,7 @@ void dispatchRequest(WiFiClient client, BufferedResponseWriter& writer, StringVi
 }
 
 void sendFile(WiFiClient client, BufferedResponseWriter& writer, const char *file_contents, int len, const char *content_type) {
-  // TODO Add caching back
-  //sendResponseHeaders(writer, 200, "Cache-Control: public, max-age=691200", content_type);
-  sendResponseHeaders(writer, 200, "", content_type);
+  sendResponseHeaders(writer, 200, "Cache-Control: public, max-age=691200", content_type);
   writer.write_P(file_contents, len);
 }
 
@@ -546,26 +542,9 @@ void writeMeetingsForDate(BufferedResponseWriter& writer, int date) {
   }
 }
 
-/*void updateTime() {
-  if (time_client.update() && time_client.isTimeSet()) {
-    time_offset = getOffset(getCurrentTime());
-    time_client.setTimeOffset(time_offset);
-  }
-}
-
-unsigned long getCurrentTime() {
-  // getEpochTime() adds the offset to the return value.
-  // temporarily remove the offset to get the actual epoch time
-  time_client.setTimeOffset(0);
-  unsigned long current_time = time_client.getEpochTime();
-  time_client.setTimeOffset(time_offset);
-  return current_time;
-}*/
-
 void updateCurrentMeeting() {
   current_meeting = TimeRange();
   next_meeting = TimeRange();
-  //unsigned long current_time = time_client.getEpochTime();
   Time now = Time::now();
   for (int i = 0; i < MAX_MEETING_COUNT; i++) {
     TimeRange *meeting = &meetings[i];
