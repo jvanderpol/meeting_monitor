@@ -36,8 +36,7 @@ async function syncMeetings() {
     timeMin: timeMin.toISOString(),
     timeMax: timeMax.toISOString(),
     singleEvents: true,
-    orderBy: 'startTime'//,
-    //key: 'AIzaSyAOidMZLMtRiEs9nvpPAXx75Jj3CjHitUs'
+    orderBy: 'startTime'
   });
   const eventsResponse = await fetch(
     `https://www.googleapis.com/calendar/v3/calendars/primary/events?${queryString}`,
