@@ -199,18 +199,12 @@ const uint32_t exclamation[] = {
   0x60060,
 };
 
-const uint32_t happy[] = {
-    0x19819,
-    0x80000001,
-    0x81f8000
-};
-
 void setup() {
   Serial.begin(9600);
   while (!Serial) {}
 
   matrix.begin();
-  matrix.loadSequence(animation);
+  matrix.loadSequence(startup_animation);
   matrix.play(true);
 
   if (WiFi.status() == WL_NO_MODULE) {
@@ -241,15 +235,14 @@ void setup() {
   initLedPin(YELLOW);
 
   setLedColor(&RED);
-  delay(350);
-  setLedColor(&GREEN);
-  delay(350);
-  setLedColor(&YELLOW);
-  delay(350);
-  setLedColor(&ALL_OFF);
   delay(250);
+  setLedColor(&GREEN);
+  delay(250);
+  setLedColor(&YELLOW);
+  delay(250);
+  setLedColor(&ALL_OFF);
 
-  matrix.loadFrame(happy);
+  matrix.loadFrame(camera);
 }
 
 void initLedPin(LedColor led_color) {
