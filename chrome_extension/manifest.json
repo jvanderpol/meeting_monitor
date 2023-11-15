@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Meeting Monitor Extension",
+  "description": "Alerts server of meeting status",
+  "version": "1.0",
+  "action": {
+    "default_title": "Configure",
+    "default_popup": "configure.html"
+  },
+  "permissions": [
+    "identity",
+    "storage",
+    "tabs"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "oauth2": {
+    "client_id" : "39894103720-5223p81hdt5js50s9pb8bcrssnifdp6q.apps.googleusercontent.com",
+    "scopes":[
+      "https://www.googleapis.com/auth/calendar.events.readonly"
+    ]
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAq94rP/lx69F+bjFFdCOnqj5CGBrkNLqGGLf30vZhU6nndkZUFuykul5I+qXpwDgyuu5DCyga0paMCGQkzlI2L8gvj9KIZJ8ZkZl8abtZV2ihSXTZe8VBWHP52KL+cLRZAJ3lGHhKqjC6MxxXMyEHbwmqMrpDkVeuae6iM9a9mv4xv6GvTM+J3Q0emPOfcJWa3TS/2dlOJxKegpHuGCTg+MRurntEapIr0C5dIgcN+0JJLPexwmaVRVUjF/gd812IV6tZ65HzxlJwH4dqWiGf5fEUEtmutmko3Back6xpinq2CXw8m3OGDqSBvvALX4D2nEcOZI0OCgiP23Z8qvON7wIDAQAB"
+}
+
