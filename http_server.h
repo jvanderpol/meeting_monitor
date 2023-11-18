@@ -1,6 +1,6 @@
 class Spliterator;
 
-char atol_buf[21];
+char parsing_buffer[21];
 
 class StringView {
   public:
@@ -65,11 +65,11 @@ const char* StringView::buff() {
 }
 
 unsigned long StringView::toLong() {
-  memset(atol_buf, 0, sizeof(atol_buf));
-  int maxCopyLength = sizeof(atol_buf) - 1;
+  memset(parsing_buffer, 0, sizeof(parsing_buffer));
+  int maxCopyLength = sizeof(parsing_buffer) - 1;
   int lengthToCopy = _len <= maxCopyLength ? _len : maxCopyLength;
-  memcpy(atol_buf, _s, lengthToCopy);
-  return atol(atol_buf);
+  memcpy(parsing_buffer, _s, lengthToCopy);
+  return atol(parsing_buffer);
 }
 
 void StringView::writeToSerial() {
@@ -124,20 +124,47 @@ class BufferedResponseWriter {
       write(s, strlen(s));
     }
 
-    static void writeFunc(char *dest, const char *source, int len) {
-      memcpy(dest, source, len);
-    }
-
     void write(const char *s, int len) {
-      writeWithFuncion(s, len, write_PFunc);
-    }
-
-    static void write_PFunc(char *dest, const char *source, int len) {
-      memcpy_P(dest, source, len);
+      writeWithFuncion(s, len, writeFunc);
     }
 
     void write_P(const char *s, int len) {
       writeWithFuncion(s, len, write_PFunc);
+    }
+
+    void write(int i) {
+      memset(parsing_buffer, 0, sizeof(parsing_buffer));
+      itoa(i, parsing_buffer, 10);
+      write(parsing_buffer);
+    }
+
+    void write(unsigned long l) {
+      memset(parsing_buffer, 0, sizeof(parsing_buffer));
+      ltoa(l, parsing_buffer, 10);
+      write(parsing_buffer);
+      write("L");
+    }
+
+    void write(bool b) {
+      write(b ? "true" : "false");
+    }
+
+    void flush() {
+      _client->write(_buff, _written);
+      _written = 0;
+    }
+  private:
+    char *_buff;
+    int _written;
+    const int _len;
+    WiFiClient *_client;
+
+    static void writeFunc(char *dest, const char *source, int len) {
+      memcpy(dest, source, len);
+    }
+
+    static void write_PFunc(char *dest, const char *source, int len) {
+      memcpy_P(dest, source, len);
     }
 
     void writeWithFuncion(const char *s, int len, void (*memcpy_func)(char *, const char *s, int)) {
@@ -151,16 +178,5 @@ class BufferedResponseWriter {
           flush();
         }
       }
-      
     }
-
-    void flush() {
-      _client->write(_buff, _written);
-      _written = 0;
-    }
-  private:
-    char *_buff;
-    int _written;
-    const int _len;
-    WiFiClient *_client;
 };

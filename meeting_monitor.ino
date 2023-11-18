@@ -88,12 +88,12 @@ class Time {
       if (modHour == 0) {
         modHour = 12;
       }
-      appendLong(writer, modHour, false);
+      writer.write(modHour);
       writer.write(":");
-      appendLong(writer, minute, true);
+      appendWithPadding(writer, minute);
       if (second != 0) {
         writer.write(":");
-        appendLong(writer, second, true);
+        appendWithPadding(writer, second);
       }
       writer.write(" ");
       writer.write(amPm);
@@ -109,13 +109,11 @@ class Time {
 
   private:
 
-    void appendLong(BufferedResponseWriter& writer, int n, bool pad) {
-      if (n < 10 && pad) {
+    void appendWithPadding(BufferedResponseWriter& writer, int n) {
+      if (n < 10) {
         writer.write("0");
       }
-      char digits[3];
-      ltoa(n, digits, 10);
-      writer.write(digits);
+      writer.write(n);
     }
 
     unsigned long _t;
@@ -191,13 +189,15 @@ LedColor GREEN = {
 };
 boolean in_meeting = false;
 LedColor *current_led_color = &ALL_OFF;
-LedColor *led_color_from_schedule = &ALL_OFF;
 
 const uint32_t exclamation[] = {
   0x6006006,
   0x600600,
   0x60060,
 };
+
+const unsigned long SECONDS_IN_DAY = 24 * 60 * 60;
+Time last_updated = Time();
 
 void setup() {
   Serial.begin(9600);
@@ -257,12 +257,13 @@ TimeRange meetings[MAX_MEETING_COUNT];
 TimeRange ooos[MAX_OOO_COUNT];
 TimeRange current_meeting = TimeRange();
 TimeRange next_meeting = TimeRange();
-bool currently_ooo;
+bool currently_ooo = false;
+bool screen_locked = false;
 
 void loop() {
   time_client.update();
   updateCurrentMeeting();
-  updateLedBasedOnSchedule();
+  updateLedColor();
   maybeHandleHttpRequest();
 }
 
@@ -340,11 +341,17 @@ void dispatchRequest(WiFiClient client, BufferedResponseWriter& writer, StringVi
   } else if (path.equals("/grey_circle.svg")) {
     sendFile(client, writer, grey_circle_svg, sizeof(GREY_CIRCLE_SVG) - 1, "image/svg+xml");
   } else if (path.equals("/meetingStarted")) {
-    meetingStarted(writer);
+    setMeetingStatus(writer, true);
   } else if (path.equals("/meetingEnded")) {
-    meetingEnded(writer);
+    setMeetingStatus(writer, false);
+  } else if (path.equals("/screenLocked")) {
+    setScreenLocked(writer, true);
+  } else if (path.equals("/screenUnlocked")) {
+    setScreenLocked(writer, false);
   } else if (path.equals("/setSchedule")) {
     setSchedule(query, writer);
+  } else if (path.equals("/debug")) {
+    sendDebug(writer);
   } else {
     sendStatus(writer);
   }
@@ -355,15 +362,13 @@ void sendFile(WiFiClient client, BufferedResponseWriter& writer, const char *fil
   writer.write_P(file_contents, len);
 }
 
-void meetingStarted(BufferedResponseWriter& writer) {
-  in_meeting = true;
-  setLedColor(&RED);
+void setMeetingStatus(BufferedResponseWriter& writer, bool new_in_meeting) {
+  in_meeting = new_in_meeting;
   sendResponseHeaders(writer, 200, "", "");
 }
 
-void meetingEnded(BufferedResponseWriter& writer) {
-  in_meeting = false;
-  setLedColor(led_color_from_schedule);
+void setScreenLocked(BufferedResponseWriter& writer, bool new_screen_locked) {
+  screen_locked = new_screen_locked;
   sendResponseHeaders(writer, 200, "", "");
 }
 
@@ -405,6 +410,7 @@ void sendResponseHeaders(BufferedResponseWriter& writer, int response_code, cons
 }
 
 void setSchedule(StringView query, BufferedResponseWriter& writer) {
+  last_updated = Time::now();
   Spliterator spliterator = query.split("&");
   while (spliterator.next()) {
     StringView queryParamater = spliterator.current();
@@ -414,8 +420,8 @@ void setSchedule(StringView query, BufferedResponseWriter& writer) {
       StringView value = queryParamater.substring(equalsIndex + 1);
       if (key.equals("meetings")) {
         parseMeetings(value);
-      } else if (key.equals("ooo")) {
-        parseOoo(value);
+      } else if (key.equals("ooos")) {
+        parseOoos(value);
       }
     }
   }
@@ -469,7 +475,7 @@ void parseMeetings(StringView meetingsList) {
   }
 }
 
-void parseOoo(StringView oooList) {
+void parseOoos(StringView oooList) {
   Spliterator spliterator = oooList.split(",");
   int ooo_index = 0;
   while (spliterator.next() && ooo_index < MAX_OOO_COUNT) {
@@ -488,6 +494,17 @@ void parseOoo(StringView oooList) {
   }
 }
 
+void sendHead(BufferedResponseWriter& writer, const char *title) {
+  writer.write("<head>");
+  writer.write("<link rel=\"icon\" href=\"favicon.svg\">");
+  writer.write("<link rel=\"apple-touch-icon\" href=\"favicon.svg\">");
+  writer.write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  writer.write("<link rel=\"stylesheet\" href=\"style.css\">");
+  writer.write("<title>");
+  writer.write(title);
+  writer.write("</title>");
+  writer.write("</head>");
+}
 
 void sendStatus(BufferedResponseWriter& writer) {
   Time now = Time::now();
@@ -496,12 +513,7 @@ void sendStatus(BufferedResponseWriter& writer) {
   writer.write("<!DOCTYPE HTML>");
   writer.write("<html>");
 
-  writer.write("<head>");
-  writer.write("<link rel=\"icon\" href=\"favicon.svg\">");
-  writer.write("<link rel=\"apple-touch-icon\" href=\"favicon.svg\">");
-  writer.write("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-  writer.write("<link rel=\"stylesheet\" href=\"style.css\">");
-  writer.write("</head>");
+  sendHead(writer, "Meeting Status");
 
   writer.write("<body>");
   writer.write("<img src=\"");
@@ -517,6 +529,21 @@ void sendStatus(BufferedResponseWriter& writer) {
   writer.write("<div class=\"cell header\"><p class=\"bold center\">Tomorrow's Meetings</p></div>");
   writeMeetingsForDate(writer, now.getDate() + 1);
   writer.write("</div>");
+
+  writer.write("<p class=\"center footer\">");
+  if (last_updated.getTime() == 0) {
+    writer.write("No updates revieved yet");
+  } else {
+    writer.write("Last Updated: ");
+    unsigned long delta = now.getTime() - last_updated.getTime();
+    if (delta > SECONDS_IN_DAY) {
+      writer.write(delta / SECONDS_IN_DAY);
+      writer.write(" day(s) ago");
+    } else {
+      last_updated.prettyPrint(writer);
+    }
+  }
+  writer.write("</p>");
 
   writer.write("</body></html>");
 }
@@ -538,6 +565,65 @@ void writeMeetingsForDate(BufferedResponseWriter& writer, int date) {
       writer.write("</p></div>");
     }
   }
+}
+
+void sendDebug(BufferedResponseWriter& writer) {
+  sendResponseHeaders(writer, 200, "", "text/html");
+  writer.write("<!DOCTYPE HTML>");
+  writer.write("<html>");
+
+  sendHead(writer, "Debug Data");
+
+  writer.write("<body>");
+  writer.write("<div class=\"table\">");
+
+  Time now = Time::now();
+  writeTime(writer, "Current Time", &now);
+  writeTime(writer, "last_updated", &last_updated);
+
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write("current_led_color: ");
+  writer.write(current_led_color->message);
+  writer.write("</p></div>");
+
+  writeTime(writer, "current_meeting.start ", current_meeting.getStart());
+  writeTime(writer, "current_meeting.end", current_meeting.getEnd());
+  writeTime(writer, "next_meeting.start ", next_meeting.getStart());
+  writeTime(writer, "next_meeting.end", next_meeting.getEnd());
+
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write("currently_ooo: ");
+  writer.write(currently_ooo);
+  writer.write("</p></div>");
+
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write("screen_locked: ");
+  writer.write(screen_locked);
+  writer.write("</p></div>");
+
+  for (int i = 0; i < MAX_MEETING_COUNT; i++) {
+    writeTime(writer, "Meeting start ", meetings[i].getStart());
+    writeTime(writer, "Meeting end ", meetings[i].getEnd());
+  }
+
+  for (int i = 0; i < MAX_OOO_COUNT; i++) {
+    writeTime(writer, "OOO start ", ooos[i].getStart());
+    writeTime(writer, "OOO end ", ooos[i].getEnd());
+  }
+  
+  writer.write("</body></html>");
+}
+
+void writeTime(BufferedResponseWriter& writer, const char *label, Time* time) {
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write(label);
+  writer.write(": Day[");
+  writer.write(time->getDate());
+  writer.write("] Time[");
+  time->prettyPrint(writer);
+  writer.write("] timestamp[");
+  writer.write(time->getTime());
+  writer.write("]</p></div>");
 }
 
 void updateCurrentMeeting() {
@@ -571,12 +657,13 @@ void updateCurrentMeeting() {
   }
 }
 
-void updateLedBasedOnSchedule() {
+void updateLedColor() {
+  LedColor *led_color_from_schedule = &ALL_OFF;
   if (time_client.isTimeSet()) {
     Time now = Time::now();
     int day = now.getDay();
     int hour = now.getHour();
-    if (day == SATURDAY || day == SUNDAY || hour < 7 || hour > 19 || currently_ooo) {
+    if (day == SATURDAY || day == SUNDAY || hour < 8 || hour > 18 || currently_ooo) {
       led_color_from_schedule = &ALL_OFF;
     } else {
       if (!current_meeting.isEmpty() || (!next_meeting.isEmpty() && now.getTime() + 120 > next_meeting.getStart()->getTime())) {
@@ -585,8 +672,12 @@ void updateLedBasedOnSchedule() {
         led_color_from_schedule = &GREEN;
       }
     }
-    if (!in_meeting) {
-      setLedColor(led_color_from_schedule);
-    }
+  }
+  if (in_meeting) {
+    setLedColor(&RED);
+  } else if (screen_locked) {
+    setLedColor(&ALL_OFF);
+  } else {
+    setLedColor(led_color_from_schedule);
   }
 }

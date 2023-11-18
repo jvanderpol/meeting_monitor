@@ -1,11 +1,14 @@
 body {
  -webkit-font-smoothing: antialiased;
- font-family: sans-serif;
+ font-family: Roboto, arial, sans-serif;
 }
 img {
   display: block;
   margin-left: auto;
   margin-right: auto;
+}
+.footer {
+ font-size: 0.6rem;
 }
 .center {
  text-align: center;
