@@ -755,7 +755,7 @@ void updateLedColor() {
 }
 
 void updateCameraPower() {
-  bool likely_working = false;//likelyWorking();
+  bool likely_working = likelyWorking();
   bool camera_should_be_on = (likely_working && !screen_locked) || in_meeting;
   bool camera_on;
   if (camera_should_be_on) {
