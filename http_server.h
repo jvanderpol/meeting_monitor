@@ -16,6 +16,7 @@ class StringView {
     const char* buff();
     Spliterator split(const char *s);
     unsigned long toLong();
+    int toInt();
     void writeToSerial();
   private:
     const char *_s;
@@ -66,9 +67,15 @@ const char* StringView::buff() {
 
 unsigned long StringView::toLong() {
   memset(parsing_buffer, 0, sizeof(parsing_buffer));
-  int maxCopyLength = sizeof(parsing_buffer) - 1;
-  int lengthToCopy = _len <= maxCopyLength ? _len : maxCopyLength;
-  memcpy(parsing_buffer, _s, lengthToCopy);
+  int parseLength = min(_len, sizeof(parsing_buffer) - 1);
+  memcpy(parsing_buffer, _s, parseLength);
+  return atol(parsing_buffer);
+}
+
+int StringView::toInt() {
+  memset(parsing_buffer, 0, sizeof(parsing_buffer));
+  int parseLength = min(_len, sizeof(parsing_buffer) - 1);
+  memcpy(parsing_buffer, _s, parseLength);
   return atol(parsing_buffer);
 }
 

@@ -16,6 +16,7 @@
 #define RESPONSE_BUFF_SIZE 1024
 #define MAX_MEETING_COUNT 30
 #define MAX_OOO_COUNT 3
+#define CAMERA_POWER_RELAY_PIN 7
 
 char ssid[] = NETWORK_SSID;
 char pass[] = NETWORK_PASS;
@@ -30,6 +31,11 @@ const char yellow_dash_svg[] PROGMEM = YELLOW_DASH_SVG;
 const char red_dash_svg[] PROGMEM = RED_DASH_SVG;
 const char grey_circle_svg[] PROGMEM = GREY_CIRCLE_SVG;
 const char css[] PROGMEM = CSS;
+
+#define MILLIS_IN_HOUR (60 * 60 * 1000)
+#define CAMERA_TIMEOUT_WHILE_WORKING (MILLIS_IN_HOUR * 2)
+#define CAMERA_TIMEOUT_WHILE_NOT_WORKING (MILLIS_IN_HOUR / 2)
+int camera_last_on = 0;
 
 ArduinoLEDMatrix matrix;
 
@@ -47,7 +53,7 @@ class Time {
     Time(unsigned long t) : _t(t), _offset(getOffset(t)) {}
 
     static Time now() {
-      return Time(time_client.getEpochTime());   
+      return Time(time_client.getEpochTime());
     }
 
     int getHour() {
@@ -63,7 +69,7 @@ class Time {
     }
 
     int getDay() {
-      return (getDate() - 4) % 7;
+      return (getDate() + 4) % 7;
     }
 
     int getDate() {
@@ -124,9 +130,15 @@ class TimeRange {
   public:
     TimeRange() : _start(Time()), _end(Time()) {}
     TimeRange(Time start, Time end) : _start(start), _end(end) {}
-    bool isEmpty() { return _start.getTime() == 0; }
-    Time* getStart() { return &_start; }
-    Time* getEnd() { return &_end; }
+    bool isEmpty() {
+      return _start.getTime() == 0;
+    }
+    Time* getStart() {
+      return &_start;
+    }
+    Time* getEnd() {
+      return &_end;
+    }
 
     void prettyPrint(BufferedResponseWriter& writer) {
       _start.prettyPrint(writer);
@@ -168,21 +180,21 @@ LedColor ALL_OFF = {
 };
 LedColor RED = {
   /*pin=*/10,
-  /*brightness=*/20,
+  /*brightness=*/75,
   /*off=*/false,
   /*svg=*/"red_dash.svg",
   /*message=*/"In a meeting",
 };
 LedColor YELLOW = {
   /*pin=*/11,
-  /*brightness=*/255,
+  /*brightness=*/125,
   /*off=*/false,
   /*svg=*/"yellow_dash.svg",
   /*message=*/"Meeting starting soon",
 };
 LedColor GREEN = {
   /*pin=*/9,
-  /*brightness=*/60,
+  /*brightness=*/255,
   /*off=*/false,
   /*svg=*/"green_check.svg",
   /*message=*/"No meeting!",
@@ -243,6 +255,9 @@ void setup() {
   setLedColor(&ALL_OFF);
 
   matrix.loadFrame(camera);
+
+  pinMode(CAMERA_POWER_RELAY_PIN, OUTPUT);
+  digitalWrite(CAMERA_POWER_RELAY_PIN, false);
 }
 
 void initLedPin(LedColor led_color) {
@@ -264,6 +279,7 @@ void loop() {
   time_client.update();
   updateCurrentMeeting();
   updateLedColor();
+  updateCameraPower();
   maybeHandleHttpRequest();
 }
 
@@ -350,6 +366,8 @@ void dispatchRequest(WiFiClient client, BufferedResponseWriter& writer, StringVi
     setScreenLocked(writer, false);
   } else if (path.equals("/setSchedule")) {
     setSchedule(query, writer);
+  } else if (path.equals("/testColor")) {
+    testColor(query, writer);
   } else if (path.equals("/debug")) {
     sendDebug(writer);
   } else {
@@ -409,6 +427,53 @@ void sendResponseHeaders(BufferedResponseWriter& writer, int response_code, cons
   writer.write("\n");
 }
 
+void testColor(StringView query, BufferedResponseWriter& writer) {
+  int pin = -1;
+  int brightness = -1;
+  int delay_time = 5000;
+  Spliterator spliterator = query.split("&");
+  while (spliterator.next()) {
+    StringView queryParamater = spliterator.current();
+    int equalsIndex = queryParamater.indexOf("=");
+    if (equalsIndex > 0) {
+      StringView key = queryParamater.substring(0, equalsIndex);
+      StringView value = queryParamater.substring(equalsIndex + 1);
+      if (key.equals("color")) {
+        if (value.equals("red")) {
+          pin = RED.pin;
+        } else if (value.equals("yellow")) {
+          pin = YELLOW.pin;
+        } else if (value.equals("green")) {
+          pin = GREEN.pin;
+        }
+      } else if (key.equals("value")) {
+        brightness = value.toInt();
+      } else if (key.equals("delay")) {
+        delay_time = value.toInt();
+      }
+    }
+  }
+  if (pin >= 0 && brightness >= 0) {
+    sendResponseHeaders(writer, 200, "", "");
+    writer.write("Testing...");
+    writer.flush();
+    LedColor testColor = {
+      /*pin=*/pin,
+      /*brightness=*/brightness,
+      /*off=*/false,
+      /*svg=*/"red_dash.svg",
+      /*message=*/"Testing",
+    };
+    setLedColor(&testColor);
+    delay(delay_time);
+    setLedColor(&ALL_OFF);
+    writer.write(" Done");
+  } else {
+    sendResponseHeaders(writer, 400, "", "");
+    writer.write("Failed to parse color and brightness");
+  }
+}
+
 void setSchedule(StringView query, BufferedResponseWriter& writer) {
   last_updated = Time::now();
   Spliterator spliterator = query.split("&");
@@ -428,11 +493,10 @@ void setSchedule(StringView query, BufferedResponseWriter& writer) {
   sendResponseHeaders(writer, 200, "", "");
 }
 
-int sort_time_ranges(const void *cmp1, const void *cmp2)
+int compareTimeRanges(const void *cmp1, const void *cmp2)
 {
   Time* a = ((TimeRange *) cmp1)->getStart();
   Time* b = ((TimeRange *) cmp2)->getStart();
-  return a > b ? 1 : (a < b ? -1 : 0);
   return a->getTime() > b->getTime() ? 1 : (a->getTime() < b->getTime() ? -1 : 0);
 }
 
@@ -471,7 +535,7 @@ void parseMeetings(StringView meetingsList) {
     meetings[i] = TimeRange();
   }
   if (meeting_index > 0) {
-    qsort(meetings, meeting_index-1, sizeof(meetings[0]), sort_time_ranges);
+    qsort(meetings, meeting_index - 1, sizeof(meetings[0]), compareTimeRanges);
   }
 }
 
@@ -508,7 +572,7 @@ void sendHead(BufferedResponseWriter& writer, const char *title) {
 
 void sendStatus(BufferedResponseWriter& writer) {
   Time now = Time::now();
-  
+
   sendResponseHeaders(writer, 200, "", "text/html");
   writer.write("<!DOCTYPE HTML>");
   writer.write("<html>");
@@ -537,7 +601,7 @@ void sendStatus(BufferedResponseWriter& writer) {
     writer.write("Last Updated: ");
     unsigned long delta = now.getTime() - last_updated.getTime();
     if (delta > SECONDS_IN_DAY) {
-      writer.write(delta / SECONDS_IN_DAY);
+      writer.write((int) (delta / SECONDS_IN_DAY));
       writer.write(" day(s) ago");
     } else {
       last_updated.prettyPrint(writer);
@@ -610,7 +674,7 @@ void sendDebug(BufferedResponseWriter& writer) {
     writeTime(writer, "OOO start ", ooos[i].getStart());
     writeTime(writer, "OOO end ", ooos[i].getEnd());
   }
-  
+
   writer.write("</body></html>");
 }
 
@@ -657,15 +721,23 @@ void updateCurrentMeeting() {
   }
 }
 
+bool likelyWorking() {
+  if (!time_client.isTimeSet()) {
+    return false;
+  }
+  Time now = Time::now();
+  int day = now.getDay();
+  int hour = now.getHour();
+  return day != SATURDAY && day != SUNDAY && !currently_ooo && hour > 6 && hour < 19;
+}
+
 void updateLedColor() {
   LedColor *led_color_from_schedule = &ALL_OFF;
   if (time_client.isTimeSet()) {
-    Time now = Time::now();
-    int day = now.getDay();
-    int hour = now.getHour();
-    if (day == SATURDAY || day == SUNDAY || hour < 8 || hour > 18 || currently_ooo) {
+    if (!likelyWorking()) {
       led_color_from_schedule = &ALL_OFF;
     } else {
+      Time now = Time::now();
       if (!current_meeting.isEmpty() || (!next_meeting.isEmpty() && now.getTime() + 120 > next_meeting.getStart()->getTime())) {
         led_color_from_schedule = &YELLOW;
       } else {
@@ -680,4 +752,18 @@ void updateLedColor() {
   } else {
     setLedColor(led_color_from_schedule);
   }
+}
+
+void updateCameraPower() {
+  bool likely_working = false;//likelyWorking();
+  bool camera_should_be_on = (likely_working && !screen_locked) || in_meeting;
+  bool camera_on;
+  if (camera_should_be_on) {
+    camera_on = true;
+    camera_last_on = millis();
+  } else {
+    int timeout = likely_working ? CAMERA_TIMEOUT_WHILE_WORKING : CAMERA_TIMEOUT_WHILE_NOT_WORKING;
+    camera_on = camera_last_on > 0 && millis() - camera_last_on <= timeout;
+  }
+  digitalWrite(CAMERA_POWER_RELAY_PIN, camera_on);
 }
