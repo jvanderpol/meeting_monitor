@@ -35,7 +35,7 @@ const char css[] PROGMEM = CSS;
 #define MILLIS_IN_HOUR (60 * 60 * 1000)
 #define CAMERA_TIMEOUT_WHILE_WORKING (MILLIS_IN_HOUR * 2)
 #define CAMERA_TIMEOUT_WHILE_NOT_WORKING (MILLIS_IN_HOUR / 2)
-int camera_last_on = 0;
+unsigned long camera_last_on = 0;
 
 ArduinoLEDMatrix matrix;
 
@@ -289,7 +289,7 @@ void maybeHandleHttpRequest() {
     BufferedResponseWriter writer(&client, response_buff, sizeof(response_buff));
     boolean responseSent = false;
     int index = 0;
-    int deadline = millis() + 2000;
+    unsigned long deadline = millis() + 2000;
     while (client.connected() && millis() < deadline && !responseSent) {
       int available = client.available();
       if (available > 0) {
@@ -383,11 +383,13 @@ void sendFile(WiFiClient client, BufferedResponseWriter& writer, const char *fil
 void setMeetingStatus(BufferedResponseWriter& writer, bool new_in_meeting) {
   in_meeting = new_in_meeting;
   sendResponseHeaders(writer, 200, "", "");
+  writer.write("OK");
 }
 
 void setScreenLocked(BufferedResponseWriter& writer, bool new_screen_locked) {
   screen_locked = new_screen_locked;
   sendResponseHeaders(writer, 200, "", "");
+  writer.write("OK");
 }
 
 void setLedColor(LedColor *new_color) {
@@ -491,6 +493,7 @@ void setSchedule(StringView query, BufferedResponseWriter& writer) {
     }
   }
   sendResponseHeaders(writer, 200, "", "");
+  writer.write("OK");
 }
 
 int compareTimeRanges(const void *cmp1, const void *cmp2)
@@ -643,6 +646,17 @@ void sendDebug(BufferedResponseWriter& writer) {
 
   Time now = Time::now();
   writeTime(writer, "Current Time", &now);
+
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write("Day of week: ");
+  writer.write(now.getDay());
+  writer.write("</p></div>");
+
+  writer.write("<div class=\"cell\"><p class=\"meeting center\">");
+  writer.write("likelyWorking: ");
+  writer.write(likelyWorking());
+  writer.write("</p></div>");
+
   writeTime(writer, "last_updated", &last_updated);
 
   writer.write("<div class=\"cell\"><p class=\"meeting center\">");
